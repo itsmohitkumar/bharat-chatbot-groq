@@ -1,11 +1,15 @@
 from setuptools import find_packages, setup
 
+with open('README.md', 'r') as f:
+    long_description = f.read()
+
 setup(
     name='bharat-chatbot-groq',
     version='0.0.1',
     author='Mohit Kumar',
     author_email='mohitpanghal12345@gmail.com',
     description='An AI-powered chatbot using multiple open source models using groq',
+    long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/itsmohitkumar/bharat-chatbot-groq',
     install_requires=[
