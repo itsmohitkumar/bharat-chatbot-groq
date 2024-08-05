@@ -8,6 +8,7 @@ arxiv==2.1.3
 async-timeout==4.0.3
 attrs==24.1.0
 beautifulsoup4==4.12.3
+-e git+https://github.com/itsmohitkumar/bharat-chatbot-groq.git@f4698a11a50531dbb5c054cd97d26d378955dd46#egg=bharat_chatbot_groq
 blinker==1.8.2
 cachetools==5.4.0
 certifi==2024.7.4

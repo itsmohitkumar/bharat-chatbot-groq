@@ -4,7 +4,7 @@ with open('README.md', 'r') as f:
     long_description = f.read()
 
 setup(
-    name='bharat_chatbot_groq',
+    name='bharat-chatbot-groq',
     version='0.0.1',
     author='Mohit Kumar',
     author_email='mohitpanghal12345@gmail.com',

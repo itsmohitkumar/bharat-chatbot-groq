@@ -31,7 +31,7 @@ class Config:
             raise ValueError("LANGCHAIN_API_KEY environment variable is not set.")
         
         # Set project name and environment variables
-        project_name = "Bharat Chatbot"
+        project_name = "Bharat_Chatbot"
         os.environ["LANGCHAIN_PROJECT"] = project_name
         os.environ["LANGCHAIN_TRACING_V2"] = "true"
         os.environ["LANGCHAIN_API_KEY"] = langchain_api_key
