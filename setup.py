@@ -11,7 +11,7 @@ setup(
     description='An AI-powered chatbot using multiple open source models using groq',
     long_description=long_description,
     long_description_content_type='text/markdown',
-    url='https://github.com/itsmohitkumar/Bharat_Chatbot_Groq',
+    url='https://github.com/itsmohitkumar/bharat-chatbot-groq',
     install_requires=[
         'langchain',
         'streamlit',

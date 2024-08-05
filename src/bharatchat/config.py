@@ -22,3 +22,16 @@ class Config:
         response.raise_for_status()
         models = response.json()
         return {model['id'] for model in models['data']}
+
+    @staticmethod
+    def setup_langchain():
+        """Setup LangChain environment variables and project."""
+        langchain_api_key = os.getenv("LANGCHAIN_API_KEY")
+        if not langchain_api_key:
+            raise ValueError("LANGCHAIN_API_KEY environment variable is not set.")
+        
+        # Set project name and environment variables
+        project_name = "Bharat Chatbot"
+        os.environ["LANGCHAIN_PROJECT"] = project_name
+        os.environ["LANGCHAIN_TRACING_V2"] = "true"
+        os.environ["LANGCHAIN_API_KEY"] = langchain_api_key

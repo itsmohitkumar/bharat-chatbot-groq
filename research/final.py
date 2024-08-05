@@ -4,6 +4,7 @@ import time
 from datetime import datetime
 from dotenv import load_dotenv
 import streamlit as st
+
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader, WebBaseLoader, TextLoader
 from langchain_community.utilities import ArxivAPIWrapper, WikipediaAPIWrapper
@@ -24,30 +25,6 @@ class Config:
     API_KEY_ENV_VAR = 'GROQ_API_KEY'
     MODEL_OPTIONS_URL = "https://api.groq.com/openai/v1/models"
     DEFAULT_MODEL = "mixtral-8x7b-32768"
-    CHUNK_SIZE = 1000
-    CHUNK_OVERLAP = 200
-    MODEL_NAME = "BAAI/bge-small-en"
-    MODEL_KWARGS = {"device": "cpu"}
-    ENCODE_KWARGS = {"normalize_embeddings": True}
-    PROMPT_TEMPLATE_QA = """
-        You are an intelligent assistant.
-        Context: {context}
-        Human: {input}
-        Assistant:
-    """
-    PROMPT_TEMPLATE_PDF = """
-        You are an assistant who provides detailed answers based on the given document content.
-        Context: {context}
-        Question: {input}
-        Assistant:
-    """
-    PROMPT_TEMPLATE_URL = """
-        You are an assistant who discusses information from the provided URL.
-        Context: {context}
-        Question: {input}
-        Assistant:
-    """
-    DOCUMENT_PROMPT_TEMPLATE = "{page_content}"
 
     @staticmethod
     def get_api_key():
@@ -66,6 +43,18 @@ class Config:
         models = response.json()
         return {model['id'] for model in models['data']}
 
+    @staticmethod
+    def setup_langchain():
+        """Setup LangChain environment variables and project."""
+        langchain_api_key = os.getenv("LANGCHAIN_API_KEY")
+        if not langchain_api_key:
+            raise ValueError("LANGCHAIN_API_KEY environment variable is not set.")
+        
+        # Set project name and environment variables
+        project_name = "Bharat Chatbot"
+        os.environ["LANGCHAIN_PROJECT"] = project_name
+        os.environ["LANGCHAIN_TRACING_V2"] = "true"
+        os.environ["LANGCHAIN_API_KEY"] = langchain_api_key
 
 class DocumentProcessor:
     def __init__(self, embeddings):
@@ -98,19 +87,16 @@ class DocumentProcessor:
     def _save_file(self, file, path):
         """Save the uploaded file to a temporary path."""
         with open(path, "wb") as f:
-            f.write(file.getbuffer() if hasattr(file, 'getbuffer') else file.read())
+            f.write(file.getbuffer() if hasattr(file, 'getbuffer') else requests.get(file).content)
 
     def _load_documents(self, path, file_type):
         """Load documents from the specified path based on file type."""
-        if file_type == "application/pdf":
-            loader = PyPDFLoader(path)
-        else:
-            loader = TextLoader(path)
+        loader = PyPDFLoader(path) if file_type == "application/pdf" else TextLoader(path)
         return loader.load()
 
     def _process_and_store_documents(self, docs):
         """Process and store documents in FAISS vector store."""
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=Config.CHUNK_SIZE, chunk_overlap=Config.CHUNK_OVERLAP)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         final_documents = text_splitter.split_documents(docs)
         if final_documents:
             st.session_state.final_documents = final_documents
@@ -121,7 +107,7 @@ class DocumentProcessor:
 
     def _generate_summary(self):
         """Generate a summary of the processed documents."""
-        if 'vectors' in st.session_state and st.session_state.vectors:
+        if 'vectors' in st.session_state:
             retriever = st.session_state.vectors.as_retriever()
             retrieval_chain = create_retrieval_chain(retriever, combine_docs_chain)
             summary_query = "Please summarize the content of the document."
@@ -174,13 +160,13 @@ class ChatHandler:
 
 
 class ToolsAndAgentsInitializer:
-    def __init__(self, model, chatbot_option):
+    def __init__(self, model):
         self.model = model
         self.api_key = Config.get_api_key()
         self.llm_model_name = Config.DEFAULT_MODEL
-        self.chatbot_option = chatbot_option
 
     def initialize_tools_and_agents(self):
+        """Initialize tools and agents for the chat interface."""
         tools = self._get_tools()
         if self.api_key:
             model_options = Config.get_model_options(self.api_key)
@@ -200,6 +186,7 @@ class ToolsAndAgentsInitializer:
             return None
 
     def _get_tools(self):
+        """Get a list of tools available for the chat agent."""
         return [
             DuckDuckGoSearchRun(name="Search"),
             ArxivQueryRun(api_wrapper=ArxivAPIWrapper(top_k_results=1, doc_content_chars_max=200)),
@@ -212,23 +199,28 @@ class ToolsAndAgentsInitializer:
         ]
 
     def _create_combined_chain(self, llm):
-        if self.chatbot_option == "Chat with PDF":
-            prompt = ChatPromptTemplate.from_template(Config.PROMPT_TEMPLATE_PDF)
-        elif self.chatbot_option == "Chat with URL":
-            prompt = ChatPromptTemplate.from_template(Config.PROMPT_TEMPLATE_URL)
-        else:
-            prompt = ChatPromptTemplate.from_template(Config.PROMPT_TEMPLATE_QA)
-
+        """Create a combined chain for processing document contexts and queries."""
+        prompt_template = """
+        Answer the questions based on the provided context only.
+        Please provide the most accurate response based on the question
+        <context>
+        {context}
+        </context>
+        Questions: {input}
+        """
+        prompt = ChatPromptTemplate.from_template(prompt_template)
         return create_stuff_documents_chain(
             llm,
             prompt,
-            document_prompt=ChatPromptTemplate.from_template(Config.DOCUMENT_PROMPT_TEMPLATE),
+            document_prompt=ChatPromptTemplate.from_template("{page_content}"),
             document_separator="\n\n"
         )
-    
+
+
 class BharatChatAI:
     def __init__(self):
         load_dotenv()
+        Config.setup_langchain()  # Set up LangChain environment variables
         self.embeddings = self._initialize_embeddings()
         st.session_state.embeddings = self.embeddings
         self.document_processor = DocumentProcessor(self.embeddings)
@@ -236,27 +228,25 @@ class BharatChatAI:
         self.search_agent = None
 
     def _initialize_embeddings(self):
-        """Initialize embeddings for document processing."""
-        return HuggingFaceBgeEmbeddings(model_name=Config.MODEL_NAME, model_kwargs=Config.MODEL_KWARGS, encode_kwargs=Config.ENCODE_KWARGS)
-
-    def process_file(self, file):
-        """Process an uploaded file."""
-        self.document_processor.process_documents(file)
-
-    def process_url(self, url):
-        """Process content from a provided URL."""
-        self.document_processor.process_url(url)
-
-    def handle_chat(self, query):
-        """Handle chat queries."""
-        if not self.chat_handler:
-            self.chat_handler = ChatHandler(st.session_state.vectors)
-        self.chat_handler.handle_chat(query)
+        """Initialize embeddings using HuggingFace BGE."""
+        model_name = "all-MiniLM-L6-v2"
+        model_kwargs = {"device": "cpu"}
+        encode_kwargs = {"normalize_embeddings": True}
+        return HuggingFaceBgeEmbeddings(model_name=model_name, model_kwargs=model_kwargs, encode_kwargs=encode_kwargs)
 
     def _get_model_options(self):
-        """Get the available model options."""
-        return Config.get_model_options(Config.get_api_key())
+        """Fetch and return available model options."""
+        try:
+            model_options = [Config.DEFAULT_MODEL]
+            model_options += list(Config.get_model_options(Config.get_api_key()))
+            return model_options
+        except Exception as e:
+            st.warning(f"Failed to fetch model options: {e}")
+            return [Config.DEFAULT_MODEL]
 
+    def run_streamlit_app(self):
+        """Run the Streamlit app interface."""
+        StreamlitInterface(self).render_app()
 
 class StreamlitInterface:
     def __init__(self, chat_ai_instance):
@@ -271,47 +261,11 @@ class StreamlitInterface:
     def _initialize_sidebar(self):
         """Initialize the sidebar with customization options."""
         st.sidebar.title('🔧 Customization')
-        
-        # Chatbot Selection
-        st.sidebar.header("Choose a Chatbot:")
-        chatbot_option = st.sidebar.radio(
-            "",
-            ["QA Chatbot", "Chat with PDF", "Chat with URL"],
-            index=0,
-            key="chat_option",
-            format_func=lambda x: f"• {x}"
-        )
-        
-        # Model Selection
-        model_options = self.chat_ai._get_model_options()
-        if model_options:
-            st.sidebar.selectbox(
-                '🔍 Choose a Model',
-                model_options,
-                help="Select the AI model you want to use."
-            )
-        else:
-            st.sidebar.text("No models available")
-
-        # Sliders
-        st.sidebar.subheader('Settings')
-        st.sidebar.slider(
-            '🧠 Conversational Memory Length:',
-            1, 10, value=5,
-            help="Set how many previous interactions the chatbot should remember."
-        )
-        st.sidebar.slider(
-            '🌡️ Temperature:',
-            0.0, 1.0, value=0.7, step=0.1,
-            help="Adjust the randomness of the chatbot's responses."
-        )
-        st.sidebar.slider(
-            '🧩 Max Tokens:',
-            50, 1000, value=300, step=50,
-            help="Specify the maximum number of tokens for responses."
-        )
-        
-        # Clear Chat History Button
+        st.sidebar.radio("Choose a Chatbot:", ("QA Chatbot", "Chat with PDF", "Chat with URL"), index=0, key="chat_option")
+        st.sidebar.selectbox('🔍 Choose a Model', self.chat_ai._get_model_options(), help="Select the AI model you want to use.")
+        st.sidebar.slider('🧠 Conversational Memory Length:', 1, 10, value=5, help="Set how many previous interactions the chatbot should remember.")
+        st.sidebar.slider('🌡️ Temperature:', 0.0, 1.0, value=0.7, step=0.1, help="Adjust the randomness of the chatbot's responses.")
+        st.sidebar.slider('🧩 Max Tokens:', 50, 1000, value=300, step=50, help="Specify the maximum number of tokens for responses.")
         if st.sidebar.button("🗑️ Clear Chat History"):
             st.session_state.chat_histories[st.session_state.chat_option] = []
             st.success("✅ Chat history cleared!")
@@ -329,14 +283,11 @@ class StreamlitInterface:
             st.session_state.vectors = None
 
         # Initialize model options
-        model_options = list(self.chat_ai._get_model_options())  # Convert set to list
-        if model_options:
-            selected_model = model_options[0]
-        else:
-            selected_model = Config.DEFAULT_MODEL  # Fallback to default model if no options available
+        model_options = self.chat_ai._get_model_options()
+        selected_model = model_options[0] if model_options else Config.DEFAULT_MODEL
 
         # Initialize tools and agents
-        tools_and_agents_initializer = ToolsAndAgentsInitializer(model=selected_model, chatbot_option=chat_option)
+        tools_and_agents_initializer = ToolsAndAgentsInitializer(model=selected_model)
         self.chat_ai.search_agent = tools_and_agents_initializer.initialize_tools_and_agents()
 
         if chat_option == "Chat with URL":
@@ -387,8 +338,8 @@ class StreamlitInterface:
         if query:
             self.chat_ai.chat_handler = ChatHandler(st.session_state.vectors)
             self.chat_ai.chat_handler.handle_chat(query)
-            
+
+
+# Streamlit application execution
 if __name__ == "__main__":
-    chat_ai_instance = BharatChatAI()
-    interface = StreamlitInterface(chat_ai_instance)
-    interface.render_app()
+    BharatChatAI().run_streamlit_app()

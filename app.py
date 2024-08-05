@@ -8,6 +8,7 @@ from src.bharatchat.chatbot import DocumentProcessor, ChatHandler, ToolsAndAgent
 class BharatChatAI:
     def __init__(self):
         load_dotenv()
+        Config.setup_langchain()  # Set up LangChain environment variables
         self.embeddings = self._initialize_embeddings()
         st.session_state.embeddings = self.embeddings
         self.document_processor = DocumentProcessor(self.embeddings)
@@ -35,7 +36,6 @@ class BharatChatAI:
         """Run the Streamlit app interface."""
         StreamlitInterface(self).render_app()
 
-
 class StreamlitInterface:
     def __init__(self, chat_ai_instance):
         self.chat_ai = chat_ai_instance
@@ -53,7 +53,7 @@ class StreamlitInterface:
             st.image('templates/groqcloud.png', width=100)  # Adjust width as needed
         spacer.markdown(
             """
-            <div style="font-size: 50px; font-weight: bold;">
+            <div style="font-size: 70px; font-weight: bold;">
                 Bharat ChatAI
             </div>
             """,
