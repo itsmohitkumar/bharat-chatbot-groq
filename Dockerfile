@@ -1,5 +1,5 @@
 # Use a base Python image
-FROM python:3.9-slim
+FROM python:3.9
 
 # Set environment variables
 ENV LANGCHAIN_TRACING_V2=true
@@ -9,11 +9,13 @@ ENV LANGCHAIN_API_KEY=your_langchain_api_key
 # Set working directory
 WORKDIR /app
 
-# Install git
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+# Install necessary packages and clean up
+RUN apt-get update && \
+    apt-get install -y git && \
+    rm -rf /var/lib/apt/lists/*
 
-# Copy the requirements file
-COPY requirements.txt requirements.txt
+# Copy the requirements file and install Python dependencies
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application code

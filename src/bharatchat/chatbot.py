@@ -3,6 +3,7 @@ import time
 import requests
 from datetime import datetime
 import streamlit as st
+from src.prompt import PROMPTS
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader, WebBaseLoader, TextLoader
 from langchain_community.utilities import ArxivAPIWrapper, WikipediaAPIWrapper
@@ -183,14 +184,5 @@ class ToolsAndAgentsInitializer:
         )
 
     def _get_prompt_templates(self, language):
-        templates = {
-            'hi': {
-                'summary': "सवालों के जवाब केवल प्रदान की गई संदर्भ के आधार पर दें। कृपया प्रश्न के आधार पर सबसे सटीक उत्तर प्रदान करें। <context>{context}</context> प्रश्न: {input}",
-                'qa': "आप एक विशेष रूप से प्रशिक्षित सहायक हैं। कृपया प्रदान की गई संदर्भ के आधार पर प्रश्न का विस्तृत और सटीक उत्तर दें। सुनिश्चित करें कि आप सभी प्रासंगिक विवरणों को संबोधित करें और किसी भी अस्पष्टता को स्पष्ट करें। <context>{context}</context> प्रश्न: {input}"
-            },
-            'en': {
-                'summary': "Answer the questions based on the provided context only. Please provide the most accurate response based on the question. <context>{context}</context> Question: {input}",
-                'qa': "You are a specialized assistant. Carefully analyze the context and provide a comprehensive answer to the question. Make sure to address all relevant details and clarify any ambiguities in the content. <context>{context}</context> Question: {input}"
-            }
-        }
+        templates = PROMPTS
         return templates.get(language, templates['en'])
