@@ -17,7 +17,7 @@ class BharatChatAI:
 
     def _initialize_embeddings(self):
         """Initialize embeddings using HuggingFace BGE."""
-        model_name = "all-MiniLM-L6-v2"
+        model_name = "all-MiniLM-L12-v2"
         model_kwargs = {"device": "cpu"}
         encode_kwargs = {"normalize_embeddings": True}
         return HuggingFaceBgeEmbeddings(model_name=model_name, model_kwargs=model_kwargs, encode_kwargs=encode_kwargs)
@@ -40,7 +40,6 @@ class StreamlitInterface:
     def __init__(self, chat_ai_instance):
         self.chat_ai = chat_ai_instance
         self.translations = self._load_translations()
-        # Set default language if not set
         if 'language' not in st.session_state:
             st.session_state.language = 'en'
         self.current_language = st.session_state.language
@@ -62,7 +61,12 @@ class StreamlitInterface:
                     'QA Chatbot': 'The QA Chatbot engages in a question-and-answer session, providing accurate and relevant responses to your queries.',
                     'Chat with PDF': 'The Chat with PDF option allows you to upload a PDF document and interact with its content to extract useful information.',
                     'Chat with URL': 'The Chat with URL feature lets you enter a URL of a document to interact with its content and obtain insights.'
-                }
+                },
+                'no_content_found': 'No content found in the response.',
+                'unexpected_format': 'Response is not in the expected format.',
+                'error_message': 'An error occurred: {}',
+                'initializing_chat_handler': 'Chat handler is not initialized. Initializing now.',
+                'content_processed': 'Content processed successfully!'
             },
             'hi': {
                 'title': 'भारत एआई चैटबॉट',
@@ -79,18 +83,30 @@ class StreamlitInterface:
                     'QA Chatbot': 'QA चैटबॉट प्रश्नोत्तर सत्र में संलग्न होता है, आपकी पूछताछों के सटीक और प्रासंगिक उत्तर प्रदान करता है।',
                     'Chat with PDF': 'PDF के साथ चैट विकल्प आपको एक PDF दस्तावेज़ अपलोड करने और इसके सामग्री के साथ बातचीत करने की अनुमति देता है।',
                     'Chat with URL': 'URL के साथ चैट सुविधा आपको दस्तावेज़ के URL को दर्ज करने और इसके सामग्री के साथ बातचीत करने की अनुमति देती है।'
-                }
+                },
+                'no_content_found': 'प्रतिक्रिया में कोई सामग्री नहीं मिली।',
+                'unexpected_format': 'प्रतिक्रिया अपेक्षित प्रारूप में नहीं है।',
+                'error_message': 'एक त्रुटि हुई: {}',
+                'initializing_chat_handler': 'चैट हैंडलर शुरू नहीं किया गया है। अभी शुरू हो रहा है।',
+                'content_processed': 'सामग्री सफलतापूर्वक संसाधित की गई!'
             }
         }
 
     def render_app(self):
         """Render the Streamlit app interface."""
-        self.current_language = st.session_state.language  # Ensure language is up-to-date
+        if 'chat_option' not in st.session_state:
+            st.session_state.chat_option = "QA Chatbot"
+        if 'chat_histories' not in st.session_state:
+            st.session_state.chat_histories = {option: [] for option in ["QA Chatbot", "Chat with PDF", "Chat with URL"]}
+        if 'vectors' not in st.session_state:
+            st.session_state.vectors = None
+
+        self.current_language = st.session_state.language
         self._set_background_image()
         self.display_logo_and_title()
+        self._display_chatbot_summary()  # Display summary based on selected chatbot
         self._initialize_sidebar()
         self._handle_sidebar_selection()
-        self._display_chatbot_summary()
 
     def _set_background_image(self):
         """Set the background image for the app."""
@@ -127,32 +143,35 @@ class StreamlitInterface:
         st.sidebar.title('TweakIt 🎛️')
 
         # Language selection
+        languages = ['en', 'hi']
         selected_language = st.sidebar.selectbox(
             'Select Language',
-            ['en', 'hi'],
-            index=['en', 'hi'].index(st.session_state.language),
+            languages,
+            index=languages.index(st.session_state.get('language', 'en')),
             format_func=lambda x: 'English' if x == 'en' else 'हिन्दी'
         )
 
-        if selected_language != st.session_state.language:
+        if selected_language != st.session_state.get('language', 'en'):
             st.session_state.language = selected_language
-            self.current_language = st.session_state.language
-            # Reset chat option and histories to apply language changes
+            self.current_language = selected_language
+            # Reset chat option and histories if language changes
             st.session_state.chat_option = "QA Chatbot"
             st.session_state.chat_histories = {option: [] for option in ["QA Chatbot", "Chat with PDF", "Chat with URL"]}
             st.session_state.vectors = None
 
-        # Ensure chat_option is initialized
+        # Ensure that we don't update session state after widget creation
+        chat_options = ["QA Chatbot", "Chat with PDF", "Chat with URL"]
         if 'chat_option' not in st.session_state:
             st.session_state.chat_option = "QA Chatbot"
 
-        # Radio button for selecting chat option
-        st.sidebar.radio(
+        selected_option = st.sidebar.radio(
             self.translations[self.current_language]['chatbot_selection'],
-            ("QA Chatbot", "Chat with PDF", "Chat with URL"),
-            index=["QA Chatbot", "Chat with PDF", "Chat with URL"].index(st.session_state.chat_option),
+            chat_options,
+            index=chat_options.index(st.session_state.chat_option),
             key="chat_option"
         )
+        # Remove the conditional re-assignment here
+        # st.session_state.chat_option = selected_option
 
         # Selectbox for choosing a model
         st.sidebar.selectbox(
@@ -162,30 +181,33 @@ class StreamlitInterface:
         )
 
         # Slider for conversational memory length
-        st.sidebar.slider(
+        memory_length = st.sidebar.slider(
             self.translations[self.current_language]['memory_length'],
             1, 10,
-            value=5,
+            value=st.session_state.get('memory_length', 5),
             help="Set how many previous interactions the chatbot should remember."
         )
+        st.session_state.memory_length = memory_length
 
         # Slider for temperature
-        st.sidebar.slider(
+        temperature = st.sidebar.slider(
             self.translations[self.current_language]['temperature'],
             0.0, 1.0,
-            value=0.7,
+            value=st.session_state.get('temperature', 0.7),
             step=0.1,
             help="Adjust the randomness of the chatbot's responses."
         )
+        st.session_state.temperature = temperature
 
         # Slider for max tokens
-        st.sidebar.slider(
+        max_tokens = st.sidebar.slider(
             self.translations[self.current_language]['max_tokens'],
             50, 1000,
-            value=300,
+            value=st.session_state.get('max_tokens', 300),
             step=50,
             help="Specify the maximum number of tokens for responses."
         )
+        st.session_state.max_tokens = max_tokens
 
         # Button to clear chat history
         if st.sidebar.button(self.translations[self.current_language]['clear_history']):
@@ -194,22 +216,17 @@ class StreamlitInterface:
 
     def _handle_sidebar_selection(self):
         """Handle user selection from the sidebar and initialize tools and agents."""
-        chat_option = st.session_state.chat_option
+        # Ensure `chat_option` is not reassigned directly
+        chat_option = st.session_state.get("chat_option", "QA Chatbot")
+        # Remove the re-assignment here
+        # st.session_state.chat_option = chat_option
 
-        # Ensure chat histories are initialized
-        if 'chat_histories' not in st.session_state:
-            st.session_state.chat_histories = {option: [] for option in ["QA Chatbot", "Chat with PDF", "Chat with URL"]}
-
-        # Ensure vectors are initialized
-        if 'vectors' not in st.session_state:
-            st.session_state.vectors = None
-
-        # Initialize model options
-        model_options = self.chat_ai._get_model_options()
-        selected_model = model_options[0] if model_options else Config.DEFAULT_MODEL
+        selected_model = st.session_state.get("_MODEL", "default_model")  # Assuming default model if not set
+        if selected_model != st.session_state.get("_MODEL"):
+            st.session_state._MODEL = selected_model
 
         # Initialize tools and agents
-        tools_and_agents_initializer = ToolsAndAgentsInitializer(model=selected_model)
+        tools_and_agents_initializer = ToolsAndAgentsInitializer(model=selected_model, language=self.current_language)
         self.chat_ai.search_agent = tools_and_agents_initializer.initialize_tools_and_agents()
 
         if chat_option == "Chat with URL":
@@ -220,45 +237,121 @@ class StreamlitInterface:
             self._handle_pdf_chat()
         else:
             st.warning("Please select a chat option to get started.")
-
-    def _handle_url_chat(self):
-        """Handle chat interactions when URL is selected."""
-        url = st.text_input(self.translations[self.current_language]['url_input'])
-        if url:
-            self.chat_ai.document_processor.process_url(url)
-        self._handle_chat_input()
+        
+    def _initialize_chat_handler(self):
+        if not self.chat_ai.chat_handler:
+            try:
+                self.chat_ai.chat_handler = ChatHandler(st.session_state.vectors)
+            except Exception as e:
+                st.error(f"Failed to initialize ChatHandler: {e}")
+                return False
+        return True
 
     def _handle_qa_chat(self):
-        """Handle chat interactions for QA chatbot."""
-        self._handle_chat_input()
-
-    def _handle_pdf_chat(self):
-        """Handle chat interactions when a PDF is uploaded."""
-        uploaded_file = st.file_uploader(self.translations[self.current_language]['upload_files'], type=["pdf", "txt"])
-        if uploaded_file:
-            self.chat_ai.document_processor.process_documents(uploaded_file)
-        self._handle_chat_input()
-
-    def _handle_chat_input(self):
-        """Handle user chat input and process the chat."""
         query = st.chat_input(placeholder=self.translations[self.current_language]['input_placeholder'])
         if query:
+            if not self._initialize_chat_handler():
+                return
             st.session_state.chat_histories[st.session_state.chat_option].append({"role": "user", "content": query})
-            self.chat_ai.chat_handler = ChatHandler(st.session_state.vectors)
+            self.chat_ai.chat_handler._display_chat_history()
+            self._display_chat_response()
+
+    def _handle_pdf_chat(self):
+        uploaded_file = st.file_uploader(self.translations[self.current_language]['upload_files'], type=["pdf", "txt"])
+        
+        if uploaded_file:
+            # Initialize ChatHandler if not already done
+            if not self._initialize_chat_handler():
+                return
+            
+            # Process the uploaded file
+            self.chat_ai.document_processor.process_documents(uploaded_file)
+            
+            # Display content processed message if it hasn't been displayed yet
+            if not st.session_state.get('content_processed_displayed', False):
+                st.success(self.translations[self.current_language]['content_processed'])
+                st.session_state.content_processed_displayed = False
+
+            # Handle chat input
+            query = st.chat_input(placeholder=self.translations[self.current_language]['input_placeholder'])
+            if query:
+                self.chat_ai.chat_handler.handle_chat(query)
+                
+                # Clear the flag after handling chat
+                st.session_state.content_processed_displayed = False
+
+    def _handle_url_chat(self):
+        url = st.text_input(self.translations[self.current_language]['url_input'])
+        
+        if url:
+            # Initialize ChatHandler if not already done
+            if not self._initialize_chat_handler():
+                return
+            
+            # Process the URL
+            self.chat_ai.document_processor.process_url(url)
+            
+            # Display content processed message if it hasn't been displayed yet
+            if not st.session_state.get('content_processed_displayed', False):
+                st.success(self.translations[self.current_language]['content_processed'])
+                st.session_state.content_processed_displayed = True
+
+            # Handle chat input
+            query = st.chat_input(placeholder=self.translations[self.current_language]['input_placeholder'])
+            if query:
+                self.chat_ai.chat_handler.handle_chat(query)
+                
+                # Clear the flag after handling chat
+                st.session_state.content_processed_displayed = False
+
+    def _handle_chat_input(self):
+        """Handle chat input from the user and display response."""
+        user_input = st.text_input(self.translations[self.current_language]['input_placeholder'])
+        if st.button("Send"):
+            if not self.chat_ai.search_agent:
+                st.warning(self.translations[self.current_language]['error_message'].format("Search agent is not initialized."))
+                return
+
+            if not self.chat_ai.chat_handler:
+                self.chat_ai.chat_handler = ChatHandler(st.session_state.vectors)
+                if not self.chat_ai.chat_handler:
+                    st.warning(self.translations[self.current_language]['error_message'].format("Failed to initialize ChatHandler."))
+                    return
+
+            st.session_state.chat_histories[st.session_state.chat_option].append({"role": "user", "content": user_input})
             self.chat_ai.chat_handler._display_chat_history()
             self._display_chat_response()
 
     def _display_chat_response(self):
-        """Display the response from the chat agent."""
         with st.chat_message("assistant"):
             st_cb = StreamlitCallbackHandler(st.container(), expand_new_thoughts=False)
             try:
-                response = self.chat_ai.search_agent.run(st.session_state.chat_histories[st.session_state.chat_option], callbacks=[st_cb])
-                st.session_state.chat_histories[st.session_state.chat_option].append({'role': 'assistant', "content": response})
-                st.write(response)
-            except Exception as e:
-                st.error(f"An error occurred: {e}")
+                if not self.chat_ai.search_agent:
+                    st.warning(self.translations[self.current_language]['error_message'].format("Search agent is not initialized."))
+                    return
 
+                response = self.chat_ai.search_agent.run(
+                    st.session_state.chat_histories[st.session_state.chat_option],
+                    callbacks=[st_cb]
+                )
+
+                st.session_state.chat_histories[st.session_state.chat_option].append({'role': 'assistant', "content": response})
+
+                # Ensure response translation based on the current language
+                if isinstance(response, str):
+                    st.write(response)
+                elif isinstance(response, list):
+                    content = [entry['content'] for entry in response if entry.get('role') == 'assistant']
+                    if content:
+                        st.write(content[0])
+                    else:
+                        st.write(self.translations[self.current_language]['no_content_found'])
+                else:
+                    st.write(self.translations[self.current_language]['unexpected_format'])
+
+            except Exception as e:
+                st.error(self.translations[self.current_language]['error_message'].format(e))
+                
     def _display_chatbot_summary(self):
         """Display the summary of the selected chatbot."""
         chat_option = st.session_state.chat_option

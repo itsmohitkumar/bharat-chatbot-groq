@@ -6,9 +6,7 @@ import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader, WebBaseLoader, TextLoader
 from langchain_community.utilities import ArxivAPIWrapper, WikipediaAPIWrapper
-from langchain_community.tools import (
-    ArxivQueryRun, WikipediaQueryRun, DuckDuckGoSearchRun, Tool
-)
+from langchain_community.tools import ArxivQueryRun, WikipediaQueryRun, DuckDuckGoSearchRun, Tool
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from src.bharatchat.config import Config
 from langchain.agents import initialize_agent, AgentType
@@ -59,6 +57,14 @@ class DocumentProcessor:
         """Process and store documents in FAISS vector store."""
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         final_documents = text_splitter.split_documents(docs)
+
+        # Add metadata to documents
+        for doc in final_documents:
+            doc.metadata = {
+                'context': doc.page_content,  # or another field that represents context
+                'input': doc.page_content  # or another field that represents input
+            }
+
         if final_documents:
             st.session_state.final_documents = final_documents
             st.session_state.vectors = FAISS.from_documents(final_documents, self.embeddings)
@@ -71,7 +77,7 @@ class DocumentProcessor:
         if 'vectors' in st.session_state:
             retriever = st.session_state.vectors.as_retriever()
             retrieval_chain = create_retrieval_chain(retriever, combine_docs_chain)
-            summary_query = "Please summarize the content of the document."
+            summary_query = self._get_summary_query()
             start = time.process_time()
             try:
                 summary_result = retrieval_chain.invoke({"input": summary_query})
@@ -84,6 +90,10 @@ class DocumentProcessor:
                     st.write("No summary available.")
             except Exception as e:
                 st.error(f"An error occurred during summary generation: {e}")
+
+    def _get_summary_query(self):
+        """Get the summary query based on the current language."""
+        return "Please summarize the content of the document." if st.session_state.get('language', 'en') == 'en' else "कृपया दस्तावेज़ की सामग्री का सारांश प्रदान करें।"
 
 
 class ChatHandler:
@@ -121,8 +131,9 @@ class ChatHandler:
 
 
 class ToolsAndAgentsInitializer:
-    def __init__(self, model):
+    def __init__(self, model, language):
         self.model = model
+        self.language = language
         self.api_key = Config.get_api_key()
         self.llm_model_name = Config.DEFAULT_MODEL
 
@@ -161,18 +172,25 @@ class ToolsAndAgentsInitializer:
 
     def _create_combined_chain(self, llm):
         """Create a combined chain for processing document contexts and queries."""
-        prompt_template = """
-        Answer the questions based on the provided context only.
-        Please provide the most accurate response based on the question
-        <context>
-        {context}
-        </context>
-        Questions: {input}
-        """
-        prompt = ChatPromptTemplate.from_template(prompt_template)
+        prompt_template = self._get_prompt_templates(self.language)
+        #st.write(f"Using prompt templates for language: {self.language}")  # Debugging line
+        
         return create_stuff_documents_chain(
             llm,
-            prompt,
-            document_prompt=ChatPromptTemplate.from_template("{page_content}"),
+            ChatPromptTemplate.from_template(prompt_template['summary']),
+            document_prompt=ChatPromptTemplate.from_template(prompt_template['qa']),
             document_separator="\n\n"
         )
+
+    def _get_prompt_templates(self, language):
+        templates = {
+            'hi': {
+                'summary': "सवालों के जवाब केवल प्रदान की गई संदर्भ के आधार पर दें। कृपया प्रश्न के आधार पर सबसे सटीक उत्तर प्रदान करें। <context>{context}</context> प्रश्न: {input}",
+                'qa': "आप एक विशेष रूप से प्रशिक्षित सहायक हैं। कृपया प्रदान की गई संदर्भ के आधार पर प्रश्न का विस्तृत और सटीक उत्तर दें। सुनिश्चित करें कि आप सभी प्रासंगिक विवरणों को संबोधित करें और किसी भी अस्पष्टता को स्पष्ट करें। <context>{context}</context> प्रश्न: {input}"
+            },
+            'en': {
+                'summary': "Answer the questions based on the provided context only. Please provide the most accurate response based on the question. <context>{context}</context> Question: {input}",
+                'qa': "You are a specialized assistant. Carefully analyze the context and provide a comprehensive answer to the question. Make sure to address all relevant details and clarify any ambiguities in the content. <context>{context}</context> Question: {input}"
+            }
+        }
+        return templates.get(language, templates['en'])
