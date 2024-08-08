@@ -21,8 +21,8 @@ Bharat ChatAI is an AI-powered chatbot application that integrates various AI mo
 
 1. Clone the repository:
     ```bash
-    git clone https://github.com/yourusername/bharat-chatai.git
-    cd bharat-chatai
+    git clone https://github.com/yourusername/bharat-chatbot-groq.git
+    cd bharat-chatbot-groq
     ```
 
 2. Create a virtual environment and activate it:
