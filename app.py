@@ -1,40 +1,6 @@
 import streamlit as st
-from dotenv import load_dotenv
-from src.bharatchat.config import Config
 from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
-from langchain_community.embeddings import HuggingFaceBgeEmbeddings
-from src.bharatchat.chatbot import DocumentProcessor, ChatHandler, ToolsAndAgentsInitializer
-
-class BharatChatAI:
-    def __init__(self):
-        load_dotenv()
-        Config.setup_langchain()  # Set up LangChain environment variables
-        self.embeddings = self._initialize_embeddings()
-        st.session_state.embeddings = self.embeddings
-        self.document_processor = DocumentProcessor(self.embeddings)
-        self.chat_handler = None
-        self.search_agent = None
-
-    def _initialize_embeddings(self):
-        """Initialize embeddings using HuggingFace BGE."""
-        model_name = "all-MiniLM-L12-v2"
-        model_kwargs = {"device": "cpu"}
-        encode_kwargs = {"normalize_embeddings": True}
-        return HuggingFaceBgeEmbeddings(model_name=model_name, model_kwargs=model_kwargs, encode_kwargs=encode_kwargs)
-
-    def _get_model_options(self):
-        """Fetch and return available model options."""
-        try:
-            model_options = [Config.DEFAULT_MODEL]
-            model_options += list(Config.get_model_options(Config.get_api_key()))
-            return model_options
-        except Exception as e:
-            st.warning(f"Failed to fetch model options: {e}")
-            return [Config.DEFAULT_MODEL]
-
-    def run_streamlit_app(self):
-        """Run the Streamlit app interface."""
-        StreamlitInterface(self).render_app()
+from src.bharatchat.chatbot import BharatChatAI, ChatHandler, ToolsAndAgentsInitializer
 
 class StreamlitInterface:
     def __init__(self, chat_ai_instance):
@@ -170,8 +136,6 @@ class StreamlitInterface:
             index=chat_options.index(st.session_state.chat_option),
             key="chat_option"
         )
-        # Remove the conditional re-assignment here
-        # st.session_state.chat_option = selected_option
 
         # Selectbox for choosing a model
         st.sidebar.selectbox(
@@ -216,10 +180,7 @@ class StreamlitInterface:
 
     def _handle_sidebar_selection(self):
         """Handle user selection from the sidebar and initialize tools and agents."""
-        # Ensure `chat_option` is not reassigned directly
         chat_option = st.session_state.get("chat_option", "QA Chatbot")
-        # Remove the re-assignment here
-        # st.session_state.chat_option = chat_option
 
         selected_model = st.session_state.get("_MODEL", "default_model")  # Assuming default model if not set
         if selected_model != st.session_state.get("_MODEL"):
@@ -239,11 +200,13 @@ class StreamlitInterface:
             st.warning("Please select a chat option to get started.")
         
     def _initialize_chat_handler(self):
+        """Initialize the chat handler if it is not already initialized."""
         if not self.chat_ai.chat_handler:
             try:
+                # Initialize the chat handler without passing additional arguments
                 self.chat_ai.chat_handler = ChatHandler(st.session_state.vectors)
             except Exception as e:
-                st.error(f"Failed to initialize ChatHandler: {e}")
+                st.error(f"Failed to initialize chat handler: {e}")
                 return False
         return True
 
@@ -359,6 +322,12 @@ class StreamlitInterface:
         st.markdown(f"### {chat_option}")
         st.write(summary)
 
-# Streamlit application execution
+    def run_streamlit_app(self):
+        """Run the Streamlit app interface."""
+        StreamlitInterface(self).render_app()
+
+# Streamlit app execution
 if __name__ == "__main__":
-    BharatChatAI().run_streamlit_app()
+    interface = StreamlitInterface(BharatChatAI())
+    interface.render_app()
+
