@@ -1,20 +1,37 @@
 import os
 import time
 import requests
-from datetime import datetime
 import streamlit as st
+from datetime import datetime
+from dotenv import load_dotenv
 from src.prompt import PROMPTS
 from langchain_groq import ChatGroq
-from langchain_community.document_loaders import PyPDFLoader, WebBaseLoader, TextLoader
-from langchain_community.utilities import ArxivAPIWrapper, WikipediaAPIWrapper
-from langchain_community.tools import ArxivQueryRun, WikipediaQueryRun, DuckDuckGoSearchRun, Tool
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from src.bharatchat.config import Config
+from langchain_community.embeddings import HuggingFaceBgeEmbeddings
+from langchain_community.utilities import (
+    ArxivAPIWrapper,
+    WikipediaAPIWrapper
+)
+from langchain_community.tools import (
+    Tool,
+    ArxivQueryRun,
+    WikipediaQueryRun,
+    DuckDuckGoSearchRun
+)
+from langchain_community.document_loaders import (
+    PyPDFLoader,
+    WebBaseLoader,
+    TextLoader
+)
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.agents import initialize_agent, AgentType
 from langchain_community.vectorstores import FAISS
 from langchain.chains import create_retrieval_chain
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains.combine_documents.stuff import create_stuff_documents_chain
+
+# Disable tokenizers parallelism to avoid warnings
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 class DocumentProcessor:
     def __init__(self, embeddings):
@@ -111,7 +128,7 @@ class ChatHandler:
             retrieval_chain = create_retrieval_chain(retriever, combine_docs_chain)
             start = time.process_time()
             try:
-                result = retrieval_chain.invoke({"input": query})
+                result = retrieval_chain.invoke({"input": query})  # Updated to invoke
                 response_time = time.process_time() - start
                 if 'answer' in result:
                     st.write(f"Response time: {response_time:.2f} seconds")
@@ -129,7 +146,6 @@ class ChatHandler:
         for message in st.session_state.chat_histories[st.session_state.chat_option]:
             role = message['role']
             st.chat_message(role).write(message['content'])
-
 
 class ToolsAndAgentsInitializer:
     def __init__(self, model, language):
@@ -186,3 +202,30 @@ class ToolsAndAgentsInitializer:
     def _get_prompt_templates(self, language):
         templates = PROMPTS
         return templates.get(language, templates['en'])
+
+class BharatChatAI:
+    def __init__(self):
+        load_dotenv()
+        Config.setup_langchain()  # Set up LangChain environment variables
+        self.embeddings = self._initialize_embeddings()
+        st.session_state.embeddings = self.embeddings
+        self.document_processor = DocumentProcessor(self.embeddings)
+        self.chat_handler = None
+        self.search_agent = None
+
+    def _initialize_embeddings(self):
+        """Initialize embeddings using HuggingFace BGE."""
+        model_name = "all-MiniLM-L12-v2"
+        model_kwargs = {"device": "cpu"}
+        encode_kwargs = {"normalize_embeddings": True}
+        return HuggingFaceBgeEmbeddings(model_name=model_name, model_kwargs=model_kwargs, encode_kwargs=encode_kwargs)
+
+    def _get_model_options(self):
+        """Fetch and return available model options."""
+        try:
+            model_options = [Config.DEFAULT_MODEL]
+            model_options += list(Config.get_model_options(Config.get_api_key()))
+            return model_options
+        except Exception as e:
+            st.warning(f"Failed to fetch model options: {e}")
+            return [Config.DEFAULT_MODEL]
