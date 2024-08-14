@@ -1,5 +1,3 @@
-## README.md
-
 # Bharat ChatAI
 
 Bharat ChatAI is an AI-powered chatbot application that integrates various AI models and document processing functionalities. This application allows users to chat with the AI using different models, upload and process documents, and retrieve information from URLs.
@@ -7,6 +5,8 @@ Bharat ChatAI is an AI-powered chatbot application that integrates various AI mo
 ## Table of Contents
 - [Installation](#installation)
 - [Usage](#usage)
+- [Docker Setup](#docker-setup)
+- [AWS EC2 Deployment](#aws-ec2-deployment)
 - [File Structure](#file-structure)
 - [Code Overview](#code-overview)
   - [Config](#config)
@@ -16,6 +16,7 @@ Bharat ChatAI is an AI-powered chatbot application that integrates various AI mo
   - [BharatChatAI](#bharatchatai)
   - [StreamlitInterface](#streamlitinterface)
 - [License](#license)
+- [Contact](#contact)
 
 ## Installation
 
@@ -47,6 +48,90 @@ Run the Streamlit application:
 ```bash
 streamlit run app.py
 ```
+
+## Docker Setup
+
+To containerize the Bharat ChatAI application using Docker, follow these steps:
+
+1. **Create a Dockerfile:**
+   In the root directory of your project, create a `Dockerfile` with the following content:
+    ```Dockerfile
+    # Use an official Python runtime as a parent image
+    FROM python:3.9-slim
+
+    # Set the working directory in the container
+    WORKDIR /app
+
+    # Copy the current directory contents into the container at /app
+    COPY . /app
+
+    # Install any needed packages specified in requirements.txt
+    RUN pip install --no-cache-dir -r requirements.txt
+
+    # Make port 8501 available to the world outside this container
+    EXPOSE 8501
+
+    # Define environment variable
+    ENV GROQ_API_KEY=your_api_key_here
+
+    # Run the application
+    CMD ["streamlit", "run", "app.py"]
+    ```
+
+2. **Build the Docker image:**
+   Run the following command in the terminal to build your Docker image:
+    ```bash
+    docker build -t bharat-chatai .
+    ```
+
+3. **Run the Docker container:**
+   After the image is built, you can run the application in a container with:
+    ```bash
+    docker run -p 8501:8501 bharat-chatai
+    ```
+
+   The application will be accessible at `http://localhost:8501`.
+
+## AWS EC2 Deployment
+
+To deploy the Bharat ChatAI application on AWS EC2, follow these steps:
+
+1. **Launch an EC2 instance:**
+   - Go to the [AWS EC2 Dashboard](https://aws.amazon.com/ec2/) and launch a new instance.
+   - Choose an Amazon Machine Image (AMI), such as Ubuntu Server 20.04 LTS.
+   - Select an instance type, for example, `t2.micro` (free-tier eligible).
+   - Configure the instance details, storage, and add tags if necessary.
+   - Under "Security Group," configure a rule to allow HTTP traffic (port 80) and port 8501 for Streamlit.
+
+2. **Connect to the EC2 instance:**
+   - Use SSH to connect to your instance:
+    ```bash
+    ssh -i "your-key.pem" ubuntu@ec2-xx-xx-xx-xx.compute-1.amazonaws.com
+    ```
+
+3. **Install Docker on the EC2 instance:**
+    ```bash
+    sudo apt update
+    sudo apt install docker.io
+    sudo systemctl start docker
+    sudo systemctl enable docker
+    ```
+
+4. **Clone the Bharat ChatAI repository:**
+    ```bash
+    git clone https://github.com/itsmohitkumar/bharat-chatbot-groq.git
+    cd bharat-chatbot-groq
+    ```
+
+5. **Build and run the Docker container:**
+   - Follow the Docker setup instructions above to build and run the container on the EC2 instance:
+    ```bash
+    sudo docker build -t bharat-chatai .
+    sudo docker run -p 80:8501 bharat-chatai
+    ```
+
+6. **Access the application:**
+   - Once the container is running, you can access the application by navigating to the EC2 instance's public IP in your browser (`http://ec2-xx-xx-xx-xx.compute-1.amazonaws.com`).
 
 ## File Structure
 
@@ -102,3 +187,10 @@ The `StreamlitInterface` class renders the Streamlit app interface, including in
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+## Contact
+
+For any questions or support, please contact:
+
+Author: Mohit Kumar  
+Email: [mohitpanghal12345@gmail.com](mailto:mohitpanghal12345@gmail.com)
